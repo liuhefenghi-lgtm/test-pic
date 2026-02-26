@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+runs/
+*.pt
+*.onnx
+*.engine
+dataset/
+*.egg-info/
+.env

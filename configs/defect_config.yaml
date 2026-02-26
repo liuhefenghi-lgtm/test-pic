@@ -1,0 +1,114 @@
+# PCM 彩板表面缺陷检测系统配置文件
+# 模型: YOLO11s (Ultralytics 8.4.17)
+
+# ─────────────────────────────────────────────
+# 数据集配置
+# ─────────────────────────────────────────────
+dataset:
+  # 数据集根目录（绝对路径或相对路径）
+  path: ./dataset
+  # 缺陷类别（中英文对照）
+  nc: 6
+  names:
+    0: scratch      # 划伤
+    1: bump         # 凸包
+    2: stain        # 脏污
+    3: indentation  # 压痕
+    4: color_diff   # 色差
+    5: blister      # 起泡
+  # 中文名称（用于可视化标签）
+  names_cn:
+    0: 划伤
+    1: 凸包
+    2: 脏污
+    3: 压痕
+    4: 色差
+    5: 起泡
+
+# ─────────────────────────────────────────────
+# 模型配置
+# ─────────────────────────────────────────────
+model:
+  # 使用 YOLO11s（Ultralytics 最新一代，平衡速度与精度）
+  # 可选: yolo11n.pt / yolo11s.pt / yolo11m.pt / yolo11l.pt / yolo11x.pt
+  architecture: yolo11s.pt
+  # 输入图像尺寸（建议640或1280，需为32的倍数）
+  imgsz: 640
+  # 预训练权重（COCO，迁移学习）
+  pretrained: true
+
+# ─────────────────────────────────────────────
+# 训练超参数
+# ─────────────────────────────────────────────
+train:
+  epochs: 200
+  batch: 16           # 根据GPU显存调整；-1 = 自动
+  workers: 8
+  device: ""          # "" = 自动选择(GPU优先)；"cpu" = 仅CPU；"0" = GPU 0
+  optimizer: SGD      # SGD 或 AdamW
+  lr0: 0.01           # 初始学习率
+  lrf: 0.01           # 最终学习率 = lr0 * lrf
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  # 损失权重
+  box: 7.5
+  cls: 0.5
+  dfl: 1.5
+  # 早停（patience=0 关闭）
+  patience: 50
+  # 保存间隔（每 N epochs 保存一次检查点）
+  save_period: 10
+  # 数据增强（YOLO11 内置增强）
+  mosaic: 1.0         # Mosaic 增强概率（关键：提升小缺陷检测）
+  mixup: 0.1          # MixUp 增强概率
+  copy_paste: 0.1     # Copy-paste 增强概率
+  degrees: 5.0        # 旋转角度范围 ±5°（金属板方向基本固定）
+  translate: 0.1      # 平移比例
+  scale: 0.5          # 缩放比例
+  shear: 2.0          # 剪切变换
+  perspective: 0.0
+  flipud: 0.0         # 上下翻转（生产线方向固定，不翻转）
+  fliplr: 0.5         # 左右翻转
+  hsv_h: 0.015        # 色调抖动（细微）
+  hsv_s: 0.7          # 饱和度抖动
+  hsv_v: 0.4          # 亮度抖动（模拟生产线光照变化）
+  erasing: 0.4        # 随机擦除（模拟局部遮挡）
+  # 断点续训
+  resume: false
+
+# ─────────────────────────────────────────────
+# 推理配置
+# ─────────────────────────────────────────────
+inference:
+  conf: 0.25          # 置信度阈值
+  iou: 0.45           # NMS IoU 阈值
+  max_det: 100        # 单张图像最大检测数
+  agnostic_nms: false # 类别无关 NMS
+  # 每类缺陷的独立置信度阈值（可选，覆盖全局 conf）
+  class_conf:
+    scratch: 0.3      # 划伤（细线，适当降低阈值）
+    bump: 0.25
+    stain: 0.25
+    indentation: 0.35
+    color_diff: 0.2   # 色差（对比度低，降低阈值）
+    blister: 0.25
+
+# ─────────────────────────────────────────────
+# 输出配置
+# ─────────────────────────────────────────────
+output:
+  project: ./runs
+  train_name: pcm_defect_train
+  predict_name: pcm_defect_predict
+  eval_name: pcm_defect_eval
+  # 可视化边框颜色（BGR）
+  class_colors:
+    scratch:     [0, 0, 255]      # 红色 - 划伤
+    bump:        [255, 128, 0]    # 橙色 - 凸包
+    stain:       [0, 255, 255]    # 黄色 - 脏污
+    indentation: [255, 0, 255]    # 紫色 - 压痕
+    color_diff:  [0, 255, 0]      # 绿色 - 色差
+    blister:     [255, 0, 0]      # 蓝色 - 起泡
