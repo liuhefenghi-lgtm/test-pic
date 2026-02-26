@@ -18,19 +18,25 @@
 ```
 test-pic/
 ├── configs/
-│   └── defect_config.yaml   # 数据集、模型、训练、推理配置
+│   └── defect_config.yaml      # 数据集、模型、训练、推理配置
 ├── data/
-│   ├── augmentation.py      # 金属表面专用数据增强管线
-│   └── dataset.py           # 数据集验证、YAML生成、类别统计
+│   ├── augmentation.py         # 金属表面专用数据增强管线
+│   └── dataset.py              # 数据集验证、YAML生成、类别统计
 ├── models/
-│   └── detector.py          # PCMDefectDetector（YOLO11封装）
+│   └── detector.py             # PCMDefectDetector（YOLO11封装）
 ├── utils/
-│   ├── visualization.py     # 检测结果可视化（带颜色编码边框）
-│   └── metrics.py           # mAP/Precision/Recall/F1/混淆矩阵
-├── train.py                 # 训练入口
-├── predict.py               # 推理入口
-├── evaluate.py              # 评估入口
-├── demo.py                  # 快速演示（无需真实数据）
+│   ├── visualization.py        # 检测结果可视化（带颜色编码边框）
+│   └── metrics.py              # mAP/Precision/Recall/F1/混淆矩阵
+├── raw_data/                   # ← 将自己的图像放这里打标记
+│   ├── classes.txt             # LabelImg 类别文件（已配置好，勿改顺序）
+│   ├── images/                 # 放原始 PCM 图像
+│   └── labels/                 # LabelImg 自动保存标注到此
+├── prepare_dataset.py          # 打完标记后一键准备训练数据集
+├── visualize_labels.py         # 标注质量检查（QA）工具
+├── train.py                    # 训练入口
+├── predict.py                  # 推理入口
+├── evaluate.py                 # 评估入口
+├── demo.py                     # 快速演示（无需真实数据）
 └── requirements.txt
 ```
 
@@ -52,13 +58,134 @@ python demo.py
 
 ---
 
+## 自行打标记 → 训练（完整流程）
+
+### 总体步骤
+
+```
+Step 1: 采集 PCM 图像   →   放入 raw_data/images/
+Step 2: LabelImg 打标记  →   标注保存到 raw_data/labels/
+Step 3: 一键准备数据集   →   python prepare_dataset.py ...
+Step 4: 检查标注质量     →   python visualize_labels.py ...
+Step 5: 开始训练         →   python train.py ...
+Step 6: 评估/推理        →   python evaluate.py / predict.py
+```
+
+---
+
+### Step 1: 采集图像
+
+将 PCM 彩板图像（`.jpg` / `.png`）放入：
+```
+raw_data/images/
+```
+
+> **建议**：每类缺陷至少 200 张，推荐 500 张以上。图像分辨率 ≥ 640×640。
+
+---
+
+### Step 2: 用 LabelImg 打标记
+
+**安装 LabelImg**：
+```bash
+pip install labelImg
+labelImg
+```
+
+**配置步骤**（只需配置一次）：
+
+| 步骤 | 操作 |
+|------|------|
+| 1 | 菜单 → `Change Save Dir` → 选择 `raw_data/labels/` |
+| 2 | 菜单 → `Open Dir` → 选择 `raw_data/images/` |
+| 3 | 菜单 → `View` → 勾选 **YOLO** 格式 |
+| 4 | 勾选左侧 **Auto Save** |
+
+**打标记操作**：
+
+| 按键 | 功能 |
+|------|------|
+| `W`  | 画矩形框（拖动） |
+| `D`  | 下一张图 |
+| `A`  | 上一张图 |
+| `Ctrl+S` | 保存标注 |
+| `Del` | 删除选中的框 |
+
+**`raw_data/classes.txt` 已配置好**（与类别 ID 严格对应，**勿修改顺序**）：
+```
+scratch       ← ID 0：划伤
+bump          ← ID 1：凸包
+stain         ← ID 2：脏污
+indentation   ← ID 3：压痕
+color_diff    ← ID 4：色差
+blister       ← ID 5：起泡
+```
+
+**各类缺陷打框技巧**：
+
+- **划伤**：框住整条划痕含两端，细划伤可加 5~10px 余量
+- **凸包**：框住亮斑及周围轻微形变区（通常椭圆形）
+- **脏污**：框住整块污迹含浅色边缘；多块分散则各自画框
+- **压痕**：框住内凹区域及周边阴影
+- **色差**：框住颜色明显异常的整块区域
+- **起泡**：框住气泡隆起部分及周边变形区
+
+---
+
+### Step 3: 一键准备数据集
+
+```bash
+# 基本用法（7:1.5:1.5 划分）
+python prepare_dataset.py --source raw_data/ --output dataset/
+
+# 自定义划分比例（更多验证集）
+python prepare_dataset.py --source raw_data/ --output dataset/ --train 0.7 --val 0.2
+
+# 仅验证标注格式，不复制文件
+python prepare_dataset.py --source raw_data/ --validate-only
+
+# 覆盖已有数据集目录
+python prepare_dataset.py --source raw_data/ --output dataset/ --overwrite
+```
+
+脚本会自动：
+1. 检查标注完整性（哪些图缺标注、类别 ID 是否正确）
+2. 随机划分 train / val / test
+3. 生成 `dataset/dataset.yaml`
+4. 打印类别分布统计
+
+---
+
+### Step 4: 检查标注质量（可选但推荐）
+
+在训练前目视抽检标注是否正确：
+
+```bash
+# 查看 train 集 16 张（保存为图片）
+python visualize_labels.py --data dataset/ --split train --n 16 --save
+
+# 只看划伤类（class-id=0）
+python visualize_labels.py --data dataset/ --split train --class-id 0 --n 20 --save
+
+# 直接弹窗显示（需图形界面）
+python visualize_labels.py --data dataset/ --split train --n 8 --show
+```
+
+结果保存于 `runs/labels_vis/labels_train.jpg`，打开确认：
+- 每个缺陷都有框
+- 框的颜色与类别匹配（红=划伤，橙=凸包，黄=脏污...）
+- 无明显漏标或错标
+
+---
+
 ## 数据集准备
 
-### 目录结构（YOLO 格式）
+### 目录结构（YOLO 格式，由 prepare_dataset.py 自动生成）
 
 ```
 dataset/
 ├── dataset.yaml       # 数据集描述（自动生成）
+├── class_distribution.png  # 类别分布图
 ├── images/
 │   ├── train/         # 训练图像 *.jpg
 │   ├── val/           # 验证图像
@@ -83,26 +210,11 @@ dataset/
 2 0.748 0.612 0.089 0.091
 ```
 
-### 推荐标注工具
+### 其他标注工具
 
-- [LabelImg](https://github.com/HumanSignal/labelImg)（本地，免费）
+- [LabelImg](https://github.com/HumanSignal/labelImg)（本地，免费，**推荐**）
 - [Roboflow](https://roboflow.com)（在线，支持团队协作）
 - [CVAT](https://cvat.ai)（在线，支持视频标注）
-
-### 数据集划分
-
-如果已有原始标注，可使用内置工具自动划分：
-
-```python
-from data.dataset import split_dataset
-
-split_dataset(
-    source_dir="raw_data/",   # 含 images/ 和 labels/ 的原始目录
-    output_dir="dataset/",
-    train_ratio=0.7,
-    val_ratio=0.15,           # test = 1 - 0.7 - 0.15 = 0.15
-)
-```
 
 ---
 

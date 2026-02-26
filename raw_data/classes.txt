@@ -1,0 +1,6 @@
+scratch
+bump
+stain
+indentation
+color_diff
+blister
